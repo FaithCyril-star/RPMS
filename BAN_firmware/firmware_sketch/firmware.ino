@@ -427,12 +427,12 @@ void readBloodPressure()
     if (millis() - lastMillis > 5000)
     {
       lastMillis = millis();
-      publishMessage(temperature,beatAvg,spo2,80,120);
+      publishMessage(temperature,beatAvg,avgSpO2,80,120);
       Serial.print(temperature);
       Serial.print(" ");
       Serial.print(beatAvg);
       Serial.print(" ");
-      Serial.println(spo2);
+      Serial.println(avgSpO2);
     }
   }
   }
