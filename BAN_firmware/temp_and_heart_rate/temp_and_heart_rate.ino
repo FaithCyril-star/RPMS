@@ -28,19 +28,19 @@
 #include <PulseSensorPlayground.h>
 
 #include <SPI.h>
-#include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
 #include <ESP8266WiFi.h>
 
-#include <Keypad.h>
+#include <AWSIotConnect.h>
 
 // D6 which is GPIO12
 #define ONE_WIRE_BUS 12
 
 OneWire oneWire(ONE_WIRE_BUS);	
 MAX30105 particleSensor;
+PubSubClient device; 
 
 #define MAX_BRIGHTNESS 255
 
@@ -61,7 +61,7 @@ int beatAvg;
 unsigned long lastTemperatureRead = 0;
 unsigned long temperatureInterval = 1000;
 
-const unsigned long oxygenSaturationInterval = 60000;  
+const unsigned long oxygenSaturationInterval = 20000;  
 unsigned long startTime;
 unsigned long lastReadingTime = 0;
 
@@ -74,34 +74,20 @@ int8_t validSPO2;          // indicator to show if the SPO2 calculation is valid
 int32_t heartRate;         // heart rate value
 int8_t validHeartRate;     // indicator to show if the heart rate calculation is valid
 
-const byte RATE_SIZE_HR = 4; //Increase this for more averaging. 4 is good.
-byte rates_hr[RATE_SIZE_HR]; //Array of heart rates
-byte rateSpotHR = 0;
-long lastBeatHR = 0; //Time at which the last beat occurred
-float beatsPerMinuteHR;
-int beatAvgHR;
-
 byte pulseLED = 14; // Must be on PWM pin pin IRD D5
 byte readLED = 13;   // Blinks with each data read pin D7
 
-int pulsePin = 0;        // Pulse Sensor PURPLE WIRE connected to ANALOG PIN 0
-int Signal;                // holds the incoming raw data. Signal value can range from 0-1024
-int Threshold = 580;       // Determine which Signal to "count as a beat", and which to ingore.
-int pulse;
 
 float temperature;
-
 int avgBPM;
 int avgSpO2;
-int systolicPressure;
-int diastolicPressure;
+String systolicPressure;
+String diastolicPressure;
 
-/*ADD YOUR PASSWORD BELOW*/
-const char *ssid = "Faith";
-const char *password = "testConnection";
+bool isHeartRateMeasuring = false;
+unsigned long lastMillis = 0;
 
-//Wi-Fi Client
-WiFiClient client;
+
 //create an instance of Pulse sensor
 PulseSensorPlayground pulseSensor;
 
@@ -111,13 +97,13 @@ DallasTemperature sensors(&oneWire);
 void setup()
 {
   Serial.begin(115200);
-  // enterBloodPressure();
+  connectAWS();
+  // Wire.begin(4, 5); //SDA=4, SCL=5
   setUpOLED();
   setUpOximeter();
   setUpTempSensor();
-  setUpPulseSensor();
-  connectToWiFi();
-
+  // enterBloodPressure();
+  // readBloodPressure();
   startTime = millis();
 }
 
@@ -129,12 +115,15 @@ void loop()
   // Check if it's time to switch from oxygen saturation to heart rate
   if (currentTime - startTime < oxygenSaturationInterval) {
     // Read oxygen saturation during the first three minutes
-    readHeartRateAndSpO2();
+    readSpO2();
   } else {
+    if(!isHeartRateMeasuring){reSetUpOximeter();};
+    isHeartRateMeasuring = true;
     // Read heart rate for the rest of the time
-      readHR();
+    readHeartRate();
     }
-  displayParams(temperature,80,120,beatAvgHR,spo2);
+  displayParams(temperature,systolicPressure,diastolicPressure,beatAvg,spo2);
+  sendData();
 }
 
 
@@ -142,13 +131,12 @@ void readTemperature() {
   if (millis() - lastTemperatureRead >= temperatureInterval) {
     sensors.requestTemperatures();
     temperature = sensors.getTempCByIndex(0);
-    Serial.println(temperature);
     lastTemperatureRead = millis();
   }
 }
 
 
-void readHeartRateAndSpO2(){
+void readSpO2(){
 
   //calculate heart rate and SpO2 after first 100 samples (first 4 seconds of samples)
   maxim_heart_rate_and_oxygen_saturation(irBuffer, bufferLength, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
@@ -161,7 +149,8 @@ void readHeartRateAndSpO2(){
       irBuffer[i - 25] = irBuffer[i];
     }
 
-    //take 25 sets of samples before calculating the heart rate.
+
+    // take 25 sets of samples before calculating the heart rate.
     for (byte i = 75; i < 100; i++)
     {
       while (particleSensor.available() == false) //do we have new data?
@@ -197,38 +186,36 @@ void readHeartRateAndSpO2(){
   }
 
 
-void readHR(){
-    particleSensor.setup(); //Configure sensor with default settings
-    digitalWrite(readLED, LOW); //Blink onboard LED with every data read
+void readHeartRate(){
     long irValue = particleSensor.getIR();
 
     if (checkForBeat(irValue) == true)
     {
     //We sensed a beat!
-    long delta = millis() - lastBeatHR;
-    lastBeatHR = millis();
+    long delta = millis() - lastBeat;
+    lastBeat = millis();
 
-    beatsPerMinuteHR = 60 / (delta / 1000.0);
+    beatsPerMinute = 60 / (delta / 1000.0);
 
-    if (beatsPerMinuteHR < 255 && beatsPerMinuteHR > 20)
+    if (beatsPerMinute < 255 && beatsPerMinute > 20)
     {
-      rates_hr[rateSpotHR++] = (byte)beatsPerMinuteHR; //Store this reading in the array
-      rateSpotHR %= RATE_SIZE_HR; //Wrap variable
+      rates[rateSpot++] = (byte)beatsPerMinute; //Store this reading in the array
+      rateSpot %= RATE_SIZE; //Wrap variable
 
       //Take average of readings
       beatAvg = 0;
-      for (byte x = 0 ; x < RATE_SIZE_HR ; x++)
-        beatAvgHR += rates_hr[x];
-      beatAvgHR /= RATE_SIZE_HR;
+      for (byte x = 0 ; x < RATE_SIZE ; x++)
+        beatAvg += rates[x];
+      beatAvg /= RATE_SIZE;
     }
   }
 
   Serial.print("IR=");
   Serial.print(irValue);
   Serial.print(", BPM=");
-  Serial.print(beatsPerMinuteHR);
+  Serial.print(beatsPerMinute);
   Serial.print(", Avg BPM=");
-  Serial.print(beatAvgHR);
+  Serial.print(beatAvg);
 
   if (irValue < 50000)
     Serial.print(" No finger?");
@@ -237,7 +224,7 @@ void readHR(){
 }
 
 
-  void displayParams(float temperature, int systolicPressure, int diastolyicPressure, int heartRate, int sp02){
+  void displayParams(float temperature, String systolicPressure, String diastolyicPressure, int heartRate, int sp02){
   if(validSPO2) {
     avgSpO2 = max(avgSpO2,spo2);
     }
@@ -273,9 +260,9 @@ void readHR(){
   display.setCursor(0, 50);
   display.print("Blood Pressure:");
   display.setCursor(90, 50);
-  display.print(String(systolicPressure)+"/");
+  display.print(systolicPressure+"/");
   display.setCursor(105, 50);
-  display.print(String(diastolyicPressure));
+  display.print(diastolyicPressure);
   display.display();
   }
 
@@ -296,11 +283,6 @@ void readHR(){
   sensors.setWaitForConversion(false);
   }
 
-
-  void setUpPulseSensor(){
-  pulseSensor.analogInput(pulsePin);   
-  pulseSensor.setThreshold(Threshold);  
-  }
 
 
   void setUpOximeter(){
@@ -343,6 +325,18 @@ void readHR(){
   }
 
 
+  void reSetUpOximeter(){
+    memset(rates, '\0', sizeof rates); //Array of heart rates
+    byte rateSpotHR = 0;
+    long lastBeatHR = 0; //Time at which the last beat occurred
+    float beatsPerMinuteHR = 0;
+    int beatAvgHR = 0;
+
+    particleSensor.setup(); 
+    digitalWrite(readLED, LOW);
+  }
+
+
   void setUpKeyPad(){
 //     int n_rows = 4;
 //     int n_cols = 4;
@@ -358,31 +352,6 @@ void readHR(){
 
 //   Keypad myKeypad = Keypad(makeKeymap(keys), rowPins, colPins, n_rows, n_cols);
   }
-
-
-void connectToWiFi() {
-//Connect to WiFi Network
-   Serial.println();
-   Serial.println();
-   Serial.println("Connecting to WiFi..");
-   WiFi.enableInsecureWEP(true);
-   WiFi.mode(WIFI_STA);
-   WiFi.begin(ssid, password);
-
-  displayMessage("Connecting to Wi-Fi...");
-  while ((WiFi.status() != WL_CONNECTED)) {
-   delay(500);
-   Serial.println("Connecting...");
-}
-
-if (WiFi.status() == WL_CONNECTED) {
-    displayMessage("WiFi connected!");
-    Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());
-    delay(1000);
-}
-    Serial.println(F("Setup ready"));
-}
 
 
 void enterBloodPressure(){
@@ -403,3 +372,70 @@ void displayMessage(String message){
   display.print(message);
   display.display();
 }
+
+
+
+
+
+void readBloodPressure()
+{
+    char endChar = '*';  
+    displayMessage("Enter your systolic blood pressure value");
+    delay(2000);
+    while (true) {
+    Wire.requestFrom(8, 1); // Request 1 byte from the slave device
+    byte digit = Wire.read();
+    // Check if the received character is a digit or the end character
+    if (isdigit(digit)) {
+        systolicPressure += String(digit);
+        displayMessage(systolicPressure+"mmHg");
+      } else if (digit == endChar) {
+        // Exit the loop if the end character is received
+        break;
+      }
+      delay(100);
+      }
+
+     // Adjust delay as needed to avoid reading too frequently
+    displayMessage("Enter your diastolic blood pressure value");
+    delay(2000);
+    while (true) {
+    Wire.requestFrom(8, 1); // Request 1 byte from the slave device
+    byte digit = Wire.read();
+    // Check if the received character is a digit or the end character
+    if (isdigit(digit)) {
+        diastolicPressure += String(digit);
+        displayMessage(diastolicPressure+"mmHg");
+      } else if (digit == endChar) {
+        // Exit the loop if the end character is received
+        break;
+      }
+      delay(100);
+      }
+  }
+
+
+  void sendData(){
+  device = getClient();
+  if (!device.connected())
+  {
+    connectAWS();
+  }
+  else
+  {
+    device.loop();
+    if (millis() - lastMillis > 5000)
+    {
+      lastMillis = millis();
+      publishMessage(temperature,beatAvg,spo2,80,120);
+      Serial.print(temperature);
+      Serial.print(" ");
+      Serial.print(beatAvg);
+      Serial.print(" ");
+      Serial.println(spo2);
+    }
+  }
+  }
+
+
+//left with using button to send the data to prevent program blocking
