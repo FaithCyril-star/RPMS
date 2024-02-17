@@ -432,16 +432,12 @@ void readBloodPressure()
   else
   {
     device.loop();
-    if (millis() - lastMillis > 5000)
-    {
-      lastMillis = millis();
-      publishMessage(temperature,beatAvg,avgSpO2,80,120);
-      Serial.print(temperature);
-      Serial.print(" ");
-      Serial.print(beatAvg);
-      Serial.print(" ");
-      Serial.println(avgSpO2);
-    }
+    publishMessage(temperature,avgBPM,avgSpO2,80,120);
+    Serial.print(temperature);
+    Serial.print(" ");
+    Serial.print(avgBPM);
+    Serial.print(" ");
+    Serial.println(avgSpO2);
   }
   }
 
