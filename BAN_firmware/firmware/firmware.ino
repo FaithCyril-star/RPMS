@@ -81,8 +81,9 @@ byte buttonPin = 16;
 float temperature;
 int avgBPM;
 int avgSpO2;
-String systolicPressure;
-String diastolicPressure;
+int systolicPressure = 0;
+int diastolicPressure = 0;
+int endCount = 0;
 
 bool isHeartRateMeasuring = false;
 unsigned long lastMillis = 0;
@@ -99,14 +100,13 @@ void setup()
 {
   Serial.begin(115200);
 
-  // Wire.begin(4, 5); //SDA=4, SCL=5
+  Wire.begin(4, 5); //SDA=4, SCL=5
   //setup button
   pinMode(buttonPin, INPUT);
   setUpOLED();
   setUpOximeter();
   setUpTempSensor();
-  // enterBloodPressure();
-  // readBloodPressure();
+  readBloodPressure();
   displayMessage("Connecting to AWS...");
   connectAWS();
   startTime = millis();
@@ -232,7 +232,7 @@ void readHeartRate(){
 }
 
 
-  void displayParams(float temperature, String systolicPressure, String diastolyicPressure, int heartRate, int sp02){
+  void displayParams(float temperature, int systolicPressure, int diastolyicPressure, int heartRate, int sp02){
   if(validSPO2) {
     avgSpO2 = max(avgSpO2,spo2);
     }
@@ -268,9 +268,9 @@ void readHeartRate(){
   display.setCursor(0, 50);
   display.print("Blood Pressure:");
   display.setCursor(90, 50);
-  display.print(systolicPressure+"/");
+  display.print(String(systolicPressure)+"/");
   display.setCursor(105, 50);
-  display.print(diastolyicPressure);
+  display.print(String(diastolyicPressure));
   display.display();
   }
 
@@ -345,33 +345,7 @@ void readHeartRate(){
   }
 
 
-  void setUpKeyPad(){
-//     int n_rows = 4;
-//     int n_cols = 4;
-//     char keys[n_rows][n_cols] = {
-//   {'1','2','3','A'},
-//   {'4','5','6','B'},
-//   {'7','8','9','C'},
-//   {'*','0','#','D'}
-// };
 
-//   byte colPins[n_rows] = {D3, D2, D1, D0};
-//   byte rowPins[n_cols] = {D7, D6, D5, D4};
-
-//   Keypad myKeypad = Keypad(makeKeymap(keys), rowPins, colPins, n_rows, n_cols);
-  }
-
-
-void enterBloodPressure(){
-  Serial.println("Enter systolic pressure: ");
-  while (Serial.available() == 0) {
-  }
-  int systolicPressure = Serial.parseInt();
-  Serial.println("Enter distolic pressure: ");
-  while (Serial.available() == 0) {
-  }
-  int diastolicPressure = Serial.parseInt();
-}
 
 
 void displayMessage(String message){
@@ -384,43 +358,61 @@ void displayMessage(String message){
 
 
 
-
-void readBloodPressure()
+void readValue(int number)
 {
-    char endChar = '*';  
-    displayMessage("Enter your systolic blood pressure value");
-    delay(2000);
-    while (true) {
-    Wire.requestFrom(8, 1); // Request 1 byte from the slave device
-    byte digit = Wire.read();
-    // Check if the received character is a digit or the end character
-    if (isdigit(digit)) {
-        systolicPressure += String(digit);
-        displayMessage(systolicPressure+"mmHg");
-      } else if (digit == endChar) {
-        // Exit the loop if the end character is received
-        break;
-      }
-      delay(100);
-      }
-
-     // Adjust delay as needed to avoid reading too frequently
-    displayMessage("Enter your diastolic blood pressure value");
-    delay(2000);
-    while (true) {
-    Wire.requestFrom(8, 1); // Request 1 byte from the slave device
-    byte digit = Wire.read();
-    // Check if the received character is a digit or the end character
-    if (isdigit(digit)) {
-        diastolicPressure += String(digit);
-        displayMessage(diastolicPressure+"mmHg");
-      } else if (digit == endChar) {
-        // Exit the loop if the end character is received
-        break;
-      }
-      delay(100);
-      }
+  if(number==64){
+    endCount++;
   }
+  else if(number==32){
+    if(endCount == 0){
+      systolicPressure /= 10;
+    }
+    else{
+      diastolicPressure /= 10;
+    }
+  }
+  else{
+    if(!endCount){
+    systolicPressure = systolicPressure*10 + number;
+    }
+    else if(endCount==1){
+    diastolicPressure = diastolicPressure*10 + number;
+    }
+  }
+}
+
+
+void readBloodPressure(){
+  displayMessage("Get ready to enter blood pressure values...");
+  delay(2000);
+  while(endCount<2){
+    Wire.requestFrom(8, 1);    // request 6 bytes from slave device #8
+    byte data = Wire.read();
+    bool isNewData = data & (1 << 7);
+    if(isNewData){
+      int8_t number  = data & ~(1 << 7);
+      readValue(number);
+    }
+
+    Serial.print("sysPressure: ");
+    Serial.println(systolicPressure);
+    Serial.print("diaPressure: ");
+    Serial.println(diastolicPressure);
+
+          //
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("systolic Pressure: ");
+    display.setCursor(110, 0);
+    display.print(systolicPressure);
+    display.setCursor(0, 28);
+    display.print("diastolic Pressure: ");
+    display.setCursor(110, 28);
+    display.print(diastolicPressure);
+    display.display();
+    delay(500);
+  }
+}
 
 
   void sendData(){
@@ -432,7 +424,7 @@ void readBloodPressure()
   else
   {
     device.loop();
-    publishMessage(temperature,avgBPM,avgSpO2,80,120);
+    publishMessage(temperature,avgBPM,avgSpO2,systolicPressure,diastolicPressure);
     Serial.print(temperature);
     Serial.print(" ");
     Serial.print(avgBPM);
@@ -440,6 +432,3 @@ void readBloodPressure()
     Serial.println(avgSpO2);
   }
   }
-
-
-//left with using button to send the data to prevent program blocking
