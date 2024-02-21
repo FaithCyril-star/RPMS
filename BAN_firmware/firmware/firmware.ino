@@ -14,7 +14,7 @@
 
 #include <AWSIotConnect.h>
 
-//#define DEBUG. //uncomment for serial printing
+#define DEBUG //uncomment for serial printing
 
 // D6 which is GPIO12
 #define ONE_WIRE_BUS 12
@@ -248,7 +248,6 @@ void readTemperature() {
 
 
 void readSpO2(){
-
   //calculate heart rate and SpO2 after first 100 samples (first 4 seconds of samples)
   maxim_heart_rate_and_oxygen_saturation(irBuffer, bufferLength, redBuffer, &spo2, &validSPO2, &heartRate, &validHeartRate);
 
@@ -418,7 +417,7 @@ else
   Serial.print(" ");
   Serial.print(systolicPressure);
   Serial.print(" ");
-  Serial.println(diastolicPressure)
+  Serial.println(diastolicPressure);
   #endif
 }
 }
