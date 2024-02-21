@@ -1,22 +1,3 @@
-/*
-  Optical Heart Rate Detection (PBA Algorithm) is by: Nathan Seidle @ SparkFun Electronics
-  
-  It is best to attach the sensor to your finger using a rubber band or other tightening
-  device. Humans are generally bad at applying constant pressure to a thing. When you
-  press your finger against the sensor it varies enough to cause the blood in your
-  finger to flow differently which causes the sensor readings to go wonky.
-
-  Hardware Connections (Breakoutboard to Arduino):
-  -5V = 5V (3.3V is allowed)
-  -GND = GND
-  -SDA = A4 (or SDA)
-  -SCL = A5 (or SCL)
-  -INT = Not connected
-
-  The MAX30105 Breakout can handle 5V or 3.3V I2C logic. We recommend powering the board with 5V
-  but it will also run at 3.3V.
-*/
-//libraries for temperature sensor
 #include <OneWire.h>
 #include <DallasTemperature.h>
 
@@ -25,8 +6,6 @@
 #include "heartRate.h"
 #include "spo2_algorithm.h"
 
-#include <PulseSensorPlayground.h>
-
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -34,6 +13,8 @@
 #include <ESP8266WiFi.h>
 
 #include <AWSIotConnect.h>
+
+//#define DEBUG. //uncomment for serial printing
 
 // D6 which is GPIO12
 #define ONE_WIRE_BUS 12
@@ -90,9 +71,6 @@ unsigned long lastMillis = 0;
 
 int sendSignal;
 
-//create an instance of Pulse sensor
-PulseSensorPlayground pulseSensor;
-
 // Pass oneWire reference to DallasTemperature library
 DallasTemperature sensors(&oneWire);
 
@@ -135,6 +113,131 @@ void loop()
 }
 
 
+
+//set up functions
+void setUpOLED(){
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+  Serial.println(F("SSD1306 allocation failed"));
+  for(;;); // Don't proceed, loop forever
+}
+display.setTextSize(1);
+display.setTextColor(WHITE);
+display.clearDisplay();
+}
+
+
+void setUpTempSensor(){
+sensors.begin();
+sensors.setWaitForConversion(false);
+}
+
+
+
+void setUpOximeter(){
+pinMode(pulseLED, OUTPUT);
+pinMode(readLED, OUTPUT);
+
+// Initialize sensor
+if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
+{
+  Serial.println(F("MAX30105 was not found. Please check wiring/power."));
+  while (1);
+}
+
+byte ledBrightness = 60; //Options: 0=Off to 255=50mA
+byte sampleAverage = 4; //Options: 1, 2, 4, 8, 16, 32
+byte ledMode = 2; //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
+byte sampleRate = 100; //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
+int pulseWidth = 411; //Options: 69, 118, 215, 411
+int adcRange = 4096; //Options: 2048, 4096, 8192, 16384
+
+particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
+bufferLength = 100; //buffer length of 100 stores 4 seconds of samples running at 25sps
+
+//read the first 100 samples, and determine the signal range
+for (byte i = 0 ; i < bufferLength ; i++)
+{
+  while (particleSensor.available() == false) //do we have new data?
+    particleSensor.check(); //Check the sensor for new data
+
+  redBuffer[i] = particleSensor.getRed();
+  irBuffer[i] = particleSensor.getIR();
+  particleSensor.nextSample(); //We're finished with this sample so move to next sample
+
+  #ifdef DEBUG
+  Serial.print(F("red="));
+  Serial.print(redBuffer[i], DEC);
+  Serial.print(F(", ir="));
+  Serial.println(irBuffer[i], DEC);
+  #endif
+  displayMessage("Setting oximeter up ...");
+}
+}
+
+
+void reSetUpOximeter(){
+  memset(rates, '\0', sizeof rates); //Array of heart rates
+  byte rateSpotHR = 0;
+  long lastBeatHR = 0; //Time at which the last beat occurred
+  float beatsPerMinuteHR = 0;
+  int beatAvgHR = 0;
+
+  particleSensor.setup(); 
+  digitalWrite(readLED, LOW);
+}
+
+
+//display functions
+void displayParams(float temperature, int systolicPressure, int diastolyicPressure, int heartRate, int sp02){
+if(validSPO2) {
+  avgSpO2 = max(avgSpO2,spo2);
+  }
+avgBPM = max(heartRate,avgBPM);
+
+// Display Text
+display.clearDisplay();
+display.setCursor(0, 0);
+display.print("Temperature: ");
+display.setCursor(85, 0);
+display.print(String(temperature));
+display.setCursor(120, 0);
+display.println("C");
+display.setCursor(0, 15);
+display.print("Heart rate: ");
+if(avgBPM) {
+  display.setCursor(85, 15);
+  display.print(String(avgBPM));
+  display.setCursor(110, 15);
+  display.println("bpm");
+  }
+else{
+  display.setCursor(70, 15);
+  display.print("Reading..");
+  }
+
+display.setCursor(0, 35);
+display.print("Sp02: ");
+display.setCursor(85, 35);
+display.print(String(avgSpO2));
+display.setCursor(100, 35);
+display.print("%");
+display.setCursor(0, 50);
+display.print("Blood Pressure:");
+display.setCursor(90, 50);
+display.print(String(systolicPressure)+"/"+String(diastolyicPressure)+"mmHg");
+display.display();
+}
+
+
+void displayMessage(String message){
+  display.clearDisplay();
+  display.setCursor(0, 28);
+  display.print(message);
+  display.display();
+}
+
+
+//reading functions
 void readTemperature() {
   if (millis() - lastTemperatureRead >= temperatureInterval) {
     sensors.requestTemperatures();
@@ -171,6 +274,7 @@ void readSpO2(){
       particleSensor.nextSample(); //We're finished with this sample so move to next sample
 
       //send samples and calculation result to terminal program through UART
+      #ifdef DEBUG
       Serial.print(F("red="));
       Serial.print(redBuffer[i], DEC);
       Serial.print(F(", ir="));
@@ -187,6 +291,7 @@ void readSpO2(){
 
       Serial.print(F(", SPO2Valid="));
       Serial.println(validSPO2, DEC);
+      #endif
     }
 
     //After gathering 25 new samples recalculate HR and SP02
@@ -218,6 +323,7 @@ void readHeartRate(){
     }
   }
 
+  #ifdef DEBUG
   Serial.print("IR=");
   Serial.print(irValue);
   Serial.print(", BPM=");
@@ -225,137 +331,47 @@ void readHeartRate(){
   Serial.print(", Avg BPM=");
   Serial.print(beatAvg);
 
+
   if (irValue < 50000)
     Serial.print(" No finger?");
 
   Serial.println();
+  #endif
 }
 
 
-  void displayParams(float temperature, int systolicPressure, int diastolyicPressure, int heartRate, int sp02){
-  if(validSPO2) {
-    avgSpO2 = max(avgSpO2,spo2);
-    }
-  avgBPM = max(heartRate,avgBPM);
-
-  // Display Text
-  display.clearDisplay();
-  display.setCursor(0, 0);
-  display.print("Temperature: ");
-  display.setCursor(85, 0);
-  display.print(String(temperature));
-  display.setCursor(120, 0);
-  display.println("C");
-  display.setCursor(0, 15);
-  display.print("Heart rate: ");
-  if(avgBPM) {
-    display.setCursor(85, 15);
-    display.print(String(avgBPM));
-    display.setCursor(110, 15);
-    display.println("bpm");
-    }
-  else{
-    display.setCursor(70, 15);
-    display.print("Reading..");
+void readBloodPressure(){
+  displayMessage("Get ready to enter blood pressure values...");
+  delay(2000);
+  while(endCount<2){
+    Wire.requestFrom(8, 1);    // request 6 bytes from slave device #8
+    byte data = Wire.read();
+    bool isNewData = data & (1 << 7);
+    if(isNewData){
+      int8_t number  = data & ~(1 << 7);
+      readValue(number);
     }
 
-  display.setCursor(0, 35);
-  display.print("Sp02: ");
-  display.setCursor(85, 35);
-  display.print(String(avgSpO2));
-  display.setCursor(100, 35);
-  display.print("%");
-  display.setCursor(0, 50);
-  display.print("Blood Pressure:");
-  display.setCursor(90, 50);
-  display.print(String(systolicPressure)+"/");
-  display.setCursor(105, 50);
-  display.print(String(diastolyicPressure));
-  display.display();
+    #ifdef DEBUG
+    Serial.print("sysPressure: ");
+    Serial.println(systolicPressure);
+    Serial.print("diaPressure: ");
+    Serial.println(diastolicPressure);
+    #endif
+
+    display.clearDisplay();
+    display.setCursor(0, 0);
+    display.print("systolic Pressure: ");
+    display.setCursor(110, 0);
+    display.print(systolicPressure);
+    display.setCursor(0, 28);
+    display.print("diastolic Pressure: ");
+    display.setCursor(110, 28);
+    display.print(diastolicPressure);
+    display.display();
+    delay(500);
   }
-
-
-  void setUpOLED(){
-    if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
-    Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
-  }
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.clearDisplay();
-  }
-
-
-  void setUpTempSensor(){
-  sensors.begin();
-  sensors.setWaitForConversion(false);
-  }
-
-
-
-  void setUpOximeter(){
-  pinMode(pulseLED, OUTPUT);
-  pinMode(readLED, OUTPUT);
-
-  // Initialize sensor
-  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
-  {
-    Serial.println(F("MAX30105 was not found. Please check wiring/power."));
-    while (1);
-  }
-
-  byte ledBrightness = 60; //Options: 0=Off to 255=50mA
-  byte sampleAverage = 4; //Options: 1, 2, 4, 8, 16, 32
-  byte ledMode = 2; //Options: 1 = Red only, 2 = Red + IR, 3 = Red + IR + Green
-  byte sampleRate = 100; //Options: 50, 100, 200, 400, 800, 1000, 1600, 3200
-  int pulseWidth = 411; //Options: 69, 118, 215, 411
-  int adcRange = 4096; //Options: 2048, 4096, 8192, 16384
-
-  particleSensor.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange); //Configure sensor with these settings
-  bufferLength = 100; //buffer length of 100 stores 4 seconds of samples running at 25sps
-
-  //read the first 100 samples, and determine the signal range
-  for (byte i = 0 ; i < bufferLength ; i++)
-  {
-    while (particleSensor.available() == false) //do we have new data?
-      particleSensor.check(); //Check the sensor for new data
-
-    redBuffer[i] = particleSensor.getRed();
-    irBuffer[i] = particleSensor.getIR();
-    particleSensor.nextSample(); //We're finished with this sample so move to next sample
-
-    Serial.print(F("red="));
-    Serial.print(redBuffer[i], DEC);
-    Serial.print(F(", ir="));
-    Serial.println(irBuffer[i], DEC);
-    displayMessage("Setting oximeter up ...");
-  }
-  }
-
-
-  void reSetUpOximeter(){
-    memset(rates, '\0', sizeof rates); //Array of heart rates
-    byte rateSpotHR = 0;
-    long lastBeatHR = 0; //Time at which the last beat occurred
-    float beatsPerMinuteHR = 0;
-    int beatAvgHR = 0;
-
-    particleSensor.setup(); 
-    digitalWrite(readLED, LOW);
-  }
-
-
-
-
-
-void displayMessage(String message){
-  display.clearDisplay();
-  display.setCursor(0, 28);
-  display.print(message);
-  display.display();
 }
-
-
 
 
 void readValue(int number)
@@ -382,53 +398,27 @@ void readValue(int number)
 }
 
 
-void readBloodPressure(){
-  displayMessage("Get ready to enter blood pressure values...");
-  delay(2000);
-  while(endCount<2){
-    Wire.requestFrom(8, 1);    // request 6 bytes from slave device #8
-    byte data = Wire.read();
-    bool isNewData = data & (1 << 7);
-    if(isNewData){
-      int8_t number  = data & ~(1 << 7);
-      readValue(number);
-    }
-
-    Serial.print("sysPressure: ");
-    Serial.println(systolicPressure);
-    Serial.print("diaPressure: ");
-    Serial.println(diastolicPressure);
-
-          //
-    display.clearDisplay();
-    display.setCursor(0, 0);
-    display.print("systolic Pressure: ");
-    display.setCursor(110, 0);
-    display.print(systolicPressure);
-    display.setCursor(0, 28);
-    display.print("diastolic Pressure: ");
-    display.setCursor(110, 28);
-    display.print(diastolicPressure);
-    display.display();
-    delay(500);
-  }
+//data sending functions
+void sendData(){
+device = getClient();
+if (!device.connected())
+{
+  connectAWS();
 }
-
-
-  void sendData(){
-  device = getClient();
-  if (!device.connected())
-  {
-    connectAWS();
-  }
-  else
-  {
-    device.loop();
-    publishMessage(temperature,avgBPM,avgSpO2,systolicPressure,diastolicPressure);
-    Serial.print(temperature);
-    Serial.print(" ");
-    Serial.print(avgBPM);
-    Serial.print(" ");
-    Serial.println(avgSpO2);
-  }
-  }
+else
+{
+  device.loop();
+  publishMessage(temperature,avgBPM,avgSpO2,systolicPressure,diastolicPressure);
+  #ifdef DEBUG
+  Serial.print(temperature);
+  Serial.print(" ");
+  Serial.print(avgBPM);
+  Serial.print(" ");
+  Serial.print(avgSpO2);
+  Serial.print(" ");
+  Serial.print(systolicPressure);
+  Serial.print(" ");
+  Serial.println(diastolicPressure)
+  #endif
+}
+}
