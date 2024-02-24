@@ -4,3 +4,6 @@ BAN_firmware/sample_data_generator/TestGenerator-Policy
 BAN_firmware/sample_data_generator/TestGenerator.cert.pem 
 BAN_firmware/sample_data_generator/TestGenerator.private.key 
 BAN_firmware/sample_data_generator/TestGenerator.public.key 
+
+Application/backend/node_modules
+

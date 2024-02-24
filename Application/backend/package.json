@@ -1,0 +1,14 @@
+{
+  "name": "rpms_backend",
+  "version": "1.0.0",
+  "description": "Backend server to serve requests for Remote Patient Monitoring System Client",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Faith Sobe Cyril",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
