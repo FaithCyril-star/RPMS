@@ -1,6 +1,6 @@
 import psycopg2
 
-conn_str = "postgresql://server:password@host:port/database"
+conn_str = "postgresql://user:password:port/database"
 conn = psycopg2.connect(conn_str)
 cursor = conn.cursor()
 
