@@ -204,7 +204,7 @@ display.setCursor(120, 0);
 display.println("C");
 display.setCursor(0, 15);
 display.print("Heart rate: ");
-if(avgBPM) {
+if(avgBPM >= 50) {
   display.setCursor(85, 15);
   display.print(String(avgBPM));
   display.setCursor(110, 15);
