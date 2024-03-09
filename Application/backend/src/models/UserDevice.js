@@ -2,7 +2,7 @@ const { sq } = require("../configs/postgres");
 const { DataTypes } = require("sequelize");
 
 const UserDevice = sq.define("userdevice", {
-    email:{
+    user_email:{
       type:DataTypes.STRING,
       allowNull:false,
       primaryKey: true
