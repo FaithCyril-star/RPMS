@@ -2,6 +2,12 @@ const { sq } = require("../configs/postgres");
 const { DataTypes } = require("sequelize");
 
 const UserData = sq.define("userdata", {
+    userid: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+      allowNull: false
+    },
     username:{
       type:DataTypes.STRING,
       allowNull:false
@@ -23,6 +29,11 @@ const UserData = sq.define("userdata", {
       type:DataTypes.BOOLEAN,
       allowNull:false,
       defaultValue:false
+    },
+    verification_code:{
+      type:DataTypes.STRING,
+      allowNull:false,
+      defaultValue:""
     }
   },{
     timestamps: false

@@ -4,11 +4,16 @@ const { DataTypes } = require("sequelize");
 const DeviceMetaData = sq.define("devicemetadata", {
     device_id:{
       type:DataTypes.STRING,
-      allowNull:false
+      allowNull:false,
+      primaryKey: true,
     },
-    patient_email:{
-      type:DataTypes.STRING,
-      allowNull:false
+    patient_id:{
+      type:DataTypes.INTEGER,
+      allowNull:false,
+      references: {
+        model: 'userdata', 
+        key: 'userid'      
+      }
     }
   },{
     timestamps: false
