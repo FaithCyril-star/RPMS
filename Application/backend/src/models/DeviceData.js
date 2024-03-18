@@ -11,6 +11,10 @@ const DeviceData = sq.define("devicedata", {
       type:DataTypes.STRING,
       allowNull:false,
       primaryKey: true,
+      references: {
+        model: 'devicemetadata',
+        key: 'device_id'     
+      }
     },
     temperature: {
       type: DataTypes.INTEGER,
