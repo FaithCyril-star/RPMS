@@ -13,6 +13,7 @@
 #include <ESP8266WiFi.h>
 
 #include <AWSIotConnect.h>
+#include <DatabaseConnector.h>
 
 #define DEBUG //uncomment for serial printing
 
@@ -42,8 +43,9 @@ int beatAvg;
 unsigned long lastTemperatureRead = 0;
 unsigned long temperatureInterval = 1000;
 
-const unsigned long oxygenSaturationInterval = 20000;  
+const unsigned long oxygenSaturationInterval = 60000;  
 unsigned long startTime;
+unsigned long currentTime;
 unsigned long lastReadingTime = 0;
 
 uint32_t irBuffer[100]; // infrared LED sensor data
@@ -71,8 +73,11 @@ unsigned long lastMillis = 0;
 
 int sendSignal;
 
+const unsigned long databaseTimeOut = 30000;  
+
 // Pass oneWire reference to DallasTemperature library
 DallasTemperature sensors(&oneWire);
+
 
 void setup()
 {
@@ -84,16 +89,30 @@ void setup()
   setUpOLED();
   setUpOximeter();
   setUpTempSensor();
-  readBloodPressure();
   displayMessage("Connecting to AWS...");
   connectAWS();
+
+  startTime = millis();
+  while(!isDeviceRegistered()){
+    currentTime = millis();
+    if (currentTime - startTime < databaseTimeOut){
+          displayMessage("Checking if device has been registered...");
+    }
+    else{
+      while(true){
+        displayMessage("Device is not registered. Please signup with device on the RPMS website and restart device");
+      }
+    }
+  }
+  
+  readBloodPressure();
   startTime = millis();
 }
 
 void loop()
 {
   readTemperature();
-  unsigned long currentTime = millis();
+  currentTime = millis();
 
   // Check if it's time to switch from oxygen saturation to heart rate
   if (currentTime - startTime < oxygenSaturationInterval) {
