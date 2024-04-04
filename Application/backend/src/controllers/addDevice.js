@@ -18,7 +18,7 @@ async function addDevice(req,res){
         const patientId = meta_data.patient_id;
         
         const patient = await UserData.findOne({where: { userid: patientId}});
-        // sendAuthorisationEmail(user.email,patient.email);
+        sendAuthorisationEmail(user.dataValues,patient.dataValues,deviceId);
         await UserDevice.create({"user_id":user.userid,"device_id":deviceId});
         return res.status(200).send("Device added, pending approval from patient");
     }

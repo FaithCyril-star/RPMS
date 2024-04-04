@@ -53,12 +53,17 @@ router.post("/verify-code", function (req, res) {
     });
 
 
-router.post("/authorise-user", function (req, res) {    
-    const { userId,patientId } = req.body;
+router.get("/authorise-user", function (req, res) {    
+    const userId = req.query.userid;
+    const deviceId = req.query.deviceid;
 
     // Validate the email address
-    if (!userId || !patientId || !isNumber(userId) || !isNumber(patientId) ) {
-        return res.status(400).send("Please enter valid user ids");
+    if (!userId || !isNumeric(userId) ) {
+        return res.status(400).send("Please enter a valid user id");
+    }
+
+    if(!deviceId || !validateDeviceId(deviceId)){
+        return res.status(400).send("Please enter a valid device id");
     }
 
     return signup.authoriseUser(req, res);
