@@ -43,7 +43,7 @@ int beatAvg;
 unsigned long lastTemperatureRead = 0;
 unsigned long temperatureInterval = 1000;
 
-const unsigned long oxygenSaturationInterval = 60000;  
+const unsigned long oxygenSaturationInterval = 30000;  
 unsigned long startTime;
 unsigned long currentTime;
 unsigned long lastReadingTime = 0;
@@ -57,9 +57,9 @@ int8_t validSPO2;          // indicator to show if the SPO2 calculation is valid
 int32_t heartRate;         // heart rate value
 int8_t validHeartRate;     // indicator to show if the heart rate calculation is valid
 
-byte pulseLED = 14; // Must be on PWM pin pin IRD D5
+byte pulseLED = 14; // Must be on PWM pin pin IRD D5`
 byte readLED = 13;   // Blinks with each data read pin D7
-byte buttonPin = 16;
+byte buttonPin = 16;  
 
 float temperature;
 int avgBPM;
@@ -96,11 +96,11 @@ void setup()
   while(!isDeviceRegistered()){
     currentTime = millis();
     if (currentTime - startTime < databaseTimeOut){
-          displayMessage("Checking if device has been registered...");
+          displayMessage("Checking if device is registered...");
     }
     else{
       while(true){
-        displayMessage("Device is not registered. Please signup with device on the RPMS website and restart device");
+        displayMessageWithNoCenter("This device has not  been registered.     Please register device on the RPMS website and restart device");
       }
     }
   }
@@ -160,7 +160,9 @@ pinMode(readLED, OUTPUT);
 if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
 {
   Serial.println(F("MAX30105 was not found. Please check wiring/power."));
-  while (1);
+  while (1){
+    yield();
+  };
 }
 
 byte ledBrightness = 60; //Options: 0=Off to 255=50mA
@@ -251,6 +253,14 @@ display.display();
 void displayMessage(String message){
   display.clearDisplay();
   display.setCursor(0, 28);
+  display.print(message);
+  display.display();
+}
+
+
+void displayMessageWithNoCenter(String message){
+  display.clearDisplay();
+  display.setCursor(0, 10);
   display.print(message);
   display.display();
 }
@@ -387,7 +397,6 @@ void readBloodPressure(){
     display.setCursor(110, 28);
     display.print(diastolicPressure);
     display.display();
-    delay(500);
   }
 }
 
@@ -421,12 +430,15 @@ void sendData(){
 device = getClient();
 if (!device.connected())
 {
+  displayMessage("Reconnecting device  to internet...");
   connectAWS();
 }
 else
 {
   device.loop();
   publishMessage(temperature,avgBPM,avgSpO2,systolicPressure,diastolicPressure);
+  displayMessage("Data sent!");
+  delay(500);
   #ifdef DEBUG
   Serial.print(temperature);
   Serial.print(" ");
