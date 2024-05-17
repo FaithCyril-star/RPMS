@@ -12,6 +12,7 @@ const getDeviceIdsRouter = require("./src/routes/getDeviceIds");
 const getDeviceDataRouter = require("./src/routes/getDeviceData");
 const addDeviceRouter = require("./src/routes/addDevice");
 const removeDeviceRouter = require("./src/routes/removeDevice");
+const getDevicePatient = require("./src/routes/getDevicePatient");
 
 //endpoints
 app.use("/signup",signupRouter);
@@ -20,13 +21,15 @@ app.use("/device-ids",getDeviceIdsRouter);
 app.use("/device-data",getDeviceDataRouter);
 app.use("/add-device",addDeviceRouter);
 app.use("/remove-device",removeDeviceRouter);
+app.use("/get-device-patient",getDevicePatient);
 
 app.get('/', (req, res) => {
   res.send("Backend is working!");
 });
 
 //start server
-const port = process.env.BACKEND_SERVER_PORT;
+const port = process.env.SERVER_PORT;
+const baseUrl = process.env.BASE_URL || 'http://localhost:3000'; 
 app.listen(port, () => {
-  console.log(`Example app listening at http://localhost:${port}`);
+  console.log(`Example app listening at ${baseUrl}`);
 });

@@ -13,7 +13,7 @@ async function addUser(req, res) {
     try {
         let existingUser = await UserData.findOne({ where: { email: email } });
         if (existingUser) {
-            if (existingUser.verified) {
+            if (existingUser.is_verified) {
                 return res.status(400).send("Email already exists");
             } else {
                 return res.status(400).send("Unverified email. Please check inbox to verify");
@@ -56,7 +56,7 @@ async function addUser(req, res) {
             
             const userDevice = await UserDevice.create({"user_id":newUser.userid,"device_id":deviceId});
 
-            return res.status(201).send("User was created successfully. Please check inbox for verification code");
+            return res.status(201).json({"user_id":newUser.userid,"message":"User was created successfully. Please check inbox for verification code"});
         } catch (err) {
             return res.status(500).send(err.message);
         }
@@ -71,7 +71,11 @@ async function verifyVerificationCode(req,res){
     try{
     const user =  await UserData.findOne({ where: { userid: userId} });
     if(!user){
-        return res.status(400).send("User does not exist")
+        return res.status(400).send("User does not exist");
+    }
+
+    if(user.is_verified){
+        return res.status(400).send("User is already verified");
     }
 
     const expectedVerificationCode = user.verification_code;
@@ -81,8 +85,8 @@ async function verifyVerificationCode(req,res){
         const metaData =  await DeviceMetaData.findOne({ where: { device_id: userDevice.device_id} });
         const patientId = metaData.patient_id;
         const patient = await UserData.findOne({where:{userid:patientId}});
-        sendAuthorisationEmail(user.dataValues,patient.email);
-        return res.status(200).send("Code is valid");
+        sendAuthorisationEmail(user.dataValues,patient.dataValues,userDevice.device_id);
+        return res.status(200).send("Email verification successful, authorisation email for device has been sent.");
     }
     else{
         return res.status(400).send("Code is invalid");
@@ -95,20 +99,16 @@ async function verifyVerificationCode(req,res){
 
 
 async function authoriseUser(req,res){
-    const { userId,patientId } = req.body;
+    const userId = req.query.userid;
+    const deviceId = req.query.deviceid;
+
     try{
         const user = await UserData.findOne({where:{userid:userId}});
         if(!user){
             return res.status(400).send("User does not exist")
         }
 
-        const patient = await UserData.findOne({where:{userid:patientId}});
-        if(!patient){
-            return res.status(400).send("Patient does not exist")
-        }
-
-        const deviceMetaData = await DeviceMetaData.findOne({ where: { patient_id: patientId} })
-        const userDevice =  await UserDevice.findOne({ where: { user_id: userId,device_id:deviceMetaData.device_id} });
+        const userDevice =  await UserDevice.findOne({ where: { user_id: userId,device_id:deviceId} });
         if(!userDevice){
             return res.status(400).send("User has not requested access to this patient's device");
         }

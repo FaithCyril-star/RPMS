@@ -19,7 +19,7 @@ async function login(req,res) {
         }
     
         const token = jwt.sign({ sub: email }, process.env.JWT_SECRET);
-        res.status(200).json({ userid: user.userid, token: token });
+        res.status(200).json({ userId: user.userid, username: user.username, token: token });
     }
     catch(err){
         return res.status(500).send(err.message);

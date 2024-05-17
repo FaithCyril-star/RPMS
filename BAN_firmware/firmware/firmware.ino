@@ -13,6 +13,7 @@
 #include <ESP8266WiFi.h>
 
 #include <AWSIotConnect.h>
+#include <DatabaseConnector.h>
 
 #define DEBUG //uncomment for serial printing
 
@@ -42,8 +43,9 @@ int beatAvg;
 unsigned long lastTemperatureRead = 0;
 unsigned long temperatureInterval = 1000;
 
-const unsigned long oxygenSaturationInterval = 20000;  
+const unsigned long oxygenSaturationInterval = 30000;  
 unsigned long startTime;
+unsigned long currentTime;
 unsigned long lastReadingTime = 0;
 
 uint32_t irBuffer[100]; // infrared LED sensor data
@@ -55,9 +57,9 @@ int8_t validSPO2;          // indicator to show if the SPO2 calculation is valid
 int32_t heartRate;         // heart rate value
 int8_t validHeartRate;     // indicator to show if the heart rate calculation is valid
 
-byte pulseLED = 14; // Must be on PWM pin pin IRD D5
+byte pulseLED = 14; // Must be on PWM pin pin IRD D5`
 byte readLED = 13;   // Blinks with each data read pin D7
-byte buttonPin = 16;
+byte buttonPin = 16;  
 
 float temperature;
 int avgBPM;
@@ -71,8 +73,11 @@ unsigned long lastMillis = 0;
 
 int sendSignal;
 
+const unsigned long databaseTimeOut = 30000;  
+
 // Pass oneWire reference to DallasTemperature library
 DallasTemperature sensors(&oneWire);
+
 
 void setup()
 {
@@ -84,16 +89,30 @@ void setup()
   setUpOLED();
   setUpOximeter();
   setUpTempSensor();
-  readBloodPressure();
   displayMessage("Connecting to AWS...");
   connectAWS();
+
+  startTime = millis();
+  while(!isDeviceRegistered()){
+    currentTime = millis();
+    if (currentTime - startTime < databaseTimeOut){
+          displayMessage("Checking if device is registered...");
+    }
+    else{
+      while(true){
+        displayMessageWithNoCenter("This device has not  been registered.     Please register device on the RPMS website and restart device");
+      }
+    }
+  }
+  
+  readBloodPressure();
   startTime = millis();
 }
 
 void loop()
 {
   readTemperature();
-  unsigned long currentTime = millis();
+  currentTime = millis();
 
   // Check if it's time to switch from oxygen saturation to heart rate
   if (currentTime - startTime < oxygenSaturationInterval) {
@@ -141,7 +160,9 @@ pinMode(readLED, OUTPUT);
 if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) //Use default I2C port, 400kHz speed
 {
   Serial.println(F("MAX30105 was not found. Please check wiring/power."));
-  while (1);
+  while (1){
+    yield();
+  };
 }
 
 byte ledBrightness = 60; //Options: 0=Off to 255=50mA
@@ -232,6 +253,14 @@ display.display();
 void displayMessage(String message){
   display.clearDisplay();
   display.setCursor(0, 28);
+  display.print(message);
+  display.display();
+}
+
+
+void displayMessageWithNoCenter(String message){
+  display.clearDisplay();
+  display.setCursor(0, 10);
   display.print(message);
   display.display();
 }
@@ -368,7 +397,6 @@ void readBloodPressure(){
     display.setCursor(110, 28);
     display.print(diastolicPressure);
     display.display();
-    delay(500);
   }
 }
 
@@ -402,12 +430,15 @@ void sendData(){
 device = getClient();
 if (!device.connected())
 {
+  displayMessage("Reconnecting device  to internet...");
   connectAWS();
 }
 else
 {
   device.loop();
   publishMessage(temperature,avgBPM,avgSpO2,systolicPressure,diastolicPressure);
+  displayMessage("Data sent!");
+  delay(500);
   #ifdef DEBUG
   Serial.print(temperature);
   Serial.print(" ");
